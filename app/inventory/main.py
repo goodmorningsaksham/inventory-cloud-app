@@ -10,9 +10,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential, wait_fixed
 app = FastAPI(title="inventory-service")
 
 WAREHOUSE_URL = os.getenv("WAREHOUSE_URL", "http://warehouse-proxy:8475")
-RETRIES_MAX = int(os.getenv("RETRIES_MAX", "3"))
-RETRY_TIMEOUT_SECONDS = float(os.getenv("RETRY_TIMEOUT_SECONDS", "1.0"))
-RETRY_BACKOFF_FACTOR = float(os.getenv("RETRY_BACKOFF_FACTOR", "0.5"))
+RETRIES_MAX = int(os.getenv("RETRIES_MAX", "8"))
+RETRY_TIMEOUT_SECONDS = float(os.getenv("RETRY_TIMEOUT_SECONDS", "0.5"))
+RETRY_BACKOFF_FACTOR = float(os.getenv("RETRY_BACKOFF_FACTOR", "0.0"))
 
 RETRY_COUNTER = Counter(
     "retry_count_total",
