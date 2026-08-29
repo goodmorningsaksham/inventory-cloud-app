@@ -30,7 +30,7 @@ services:
       - alt-net
     command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
     volumes:
-      - ./toxiproxy_init.alt.json:/etc/toxiproxy.json
+      - ./toxiproxy_init.json:/etc/toxiproxy.json
     depends_on:
       warehouse-service:
         condition: service_healthy
@@ -83,7 +83,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - alt-net
     command:
