@@ -1,0 +1,95 @@
+﻿version: "3.8"
+
+networks:
+  alt-net:
+    driver: bridge
+
+services:
+  warehouse-service:
+    build:
+      context: ./app/warehouse
+      dockerfile: Dockerfile
+    container_name: warehouse-service
+    ports:
+      - "8002:8002"
+    networks:
+      - alt-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8002/health\")'"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: toxiproxy
+    ports:
+      - "8474:8474"
+      - "18002:18002"
+    networks:
+      - alt-net
+    command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy_init.alt.json:/etc/toxiproxy.json
+    depends_on:
+      warehouse-service:
+        condition: service_healthy
+
+  inventory-service:
+    build:
+      context: ./app/inventory
+      dockerfile: Dockerfile
+    container_name: inventory-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - WAREHOUSE_SERVICE_URL=http://toxiproxy:18002
+    networks:
+      - alt-net
+    depends_on:
+      - toxiproxy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8001/health\")'"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  gateway-service:
+    build:
+      context: ./app/gateway
+      dockerfile: Dockerfile
+    container_name: gateway-service
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - INVENTORY_SERVICE_URL=http://inventory-service:8001
+      - GATEWAY_TIMEOUT_SECONDS=5.0
+    networks:
+      - alt-net
+    depends_on:
+      inventory-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")'"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - alt-net
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=1h"
+    depends_on:
+      - gateway-service
+      - inventory-service
+      - warehouse-service

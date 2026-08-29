@@ -1,0 +1,84 @@
+﻿name: ChangeProof Reliability Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  changeproof:
+    name: ChangeProof Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Target Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ChangeProof Engine
+        uses: actions/checkout@v4
+        with:
+          repository: goodmorningsaksham/ChangeProof
+          path: .changeproof_engine
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi==0.110.0 uvicorn==0.28.0 httpx==0.27.0 requests==2.31.0 tenacity==8.2.3 \
+                      prometheus-client==0.20.0 pydantic==2.6.4 pytest==8.1.1 \
+                      pyyaml==6.0.1 jinja2==3.1.3 pandas==2.2.1
+
+      - name: Extract PR Diff
+        id: extract_diff
+        run: |
+          git fetch origin main
+          git diff origin/main HEAD > pr.diff
+          echo "=== EXTRACTED DIFF ==="
+          cat pr.diff
+          echo "======================"
+
+      - name: Run ChangeProof CI Verification
+        env:
+          PYTHONPATH: .changeproof_engine
+        run: |
+          python -m changeproof.cli_synth_verify \
+            --diff pr.diff \
+            --output-dir runs/ci_run \
+            --compose-file docker-compose.yml \
+            --toxiproxy-config toxiproxy_init.json
+
+      - name: Post Proof Certificate to PR Comment
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = 'runs/ci_run/proof_certificate.md';
+            
+            if (fs.existsSync(path)) {
+              let certContent = fs.readFileSync(path, 'utf8');
+              const footer = `\n\n---\n### 📦 Artifact Reference\n- **Target Topology**: \`gateway-service -> inventory-service -> warehouse-service\`\n- **Verified By**: [ChangeProof Engine](https://github.com/goodmorningsaksham/ChangeProof)`;
+              const body = certContent + footer;
+              const issueNumber = context.issue.number || (context.payload.pull_request ? context.payload.pull_request.number : 1);
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: body
+              });
+            }
